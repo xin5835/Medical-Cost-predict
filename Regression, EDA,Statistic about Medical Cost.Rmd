@@ -1,0 +1,307 @@
+---
+title: "Regression, EDA about medical cost"
+author: "Roysen"
+date: "12/11/2020"
+output: html_document
+---
+
+
+```{r, message=FALSE}
+library(tidyverse)
+library(forcats)
+library(ggridges)
+library(broom.mixed)
+library(corrplot)
+library(modelr)
+library(lme4)
+library(patchwork)
+library(broom)
+```
+
+
+# 读取数据
+```{r, message=FALSE}
+insurance <- read_csv("~/workspace/insurance.csv")
+insurance
+```
+
+|序号|变量|注释|
+|:---|:---|:---|
+| 1|  age | 年龄|
+| 2|  sex | 性别|
+| 3|  bmi | 身体质量指数，成人标准值（18.5-23.9），算法：kg/(m^2)|
+| 4|  children| 小孩数量|
+| 5|  smoker | 是否吸烟|
+| 6|  region | 地区|
+| 7|  charges | 投保费用| 
+
+ 数据集有1338行（观测值），7个变量，3个字符型向量，4个数字型向量。  
+ 该数据集主要是针对医疗费用支出收集的相关数据，自变量包括用户的年龄、性别、身体质量指数、小孩数量、是否吸烟、地区。属于回归分析的范畴。  
+ 
+
+##检查缺失值
+```{r}
+insurance %>%
+    summarise_all(
+        ~ sum(is.na(.))
+    )
+```
+各个变量均没有缺失值。
+#数据概览
+```{r}
+summary(insurance)
+```
+
+##将sex 、smoker、region变量转换为因子，并保留在insu_df数据框
+```{r}
+insu_df <- insurance %>%
+    mutate(sex = factor(sex),
+           smoker = factor(smoker),
+           region = factor(region)
+           ) 
+insu_df
+```
+
+#变量简单统计
+#insurance变量分布图
+```{r}
+insurance %>% 
+ggplot(aes(x = charges, y = stat(density)))+
+    geom_histogram(aes(fill = "red"))+
+    scale_fill_manual(values = c("#d45087"))+
+    geom_density()
+    
+```
+
+##年龄因素
+```{r}
+insu_df %>% 
+    ggplot(aes(age, fill = "red"))+
+    geom_histogram(bins = 60)
+insu_df %>% 
+    ggplot(aes(age, charges))+
+    geom_point()
+ 
+insu_df %>% 
+    ggplot(aes(age, charges, color = smoker))+
+    geom_point()
+```
+
+   20岁以下的用户占比最高，年龄和保险支出费用呈线性关系，但是这种关系应该收到其他因素的影响，表现为三层线性关系。 
+经分析年龄和保险支出费用中需加入smoker这个因素，可能包含着交互效应以及多层模型。
+图形表明：  
+*医疗支出费用随着年龄增加而增加，  
+*抽烟群体的保险支出费用比非抽烟人群的保险支出费用要高，都成线性增长趋势。
+
+##性别因素
+```{r, warning = FALSE}
+insu_df %>% 
+    count(sex) %>% 
+ggplot(aes(sex, n))+
+    geom_col( aes(fill = "red", width = 0.5))+
+    scale_fill_manual(values = c("#d45087"))
+insu_df %>% 
+ggplot(aes(charges, sex, fill = sex)) +
+    ggridges::geom_density_ridges()
+
+insu_df %>% 
+ggplot(aes(sex, charges, fill = sex))+
+    geom_boxplot()
+```
+
+   性别因素，女性医疗费用支出费用集中在（500-1500美元），男性集中在（500-2000美元）。  
+女性保险支出费用在（15000-30000美元）和男性支出费用在（20000-40000美元），为正常的波动范围，男性的波动幅度更大些。女性30000美元以上和男性40000以上为各自组内的异常值，表明这一部分用户群相对是少数。在异常值的部分，女性用户的波动范围很大（30000-65000美元），可能是什么原因呢？也许需要进行问卷调研。  
+共同点：医疗费用支出有着大致相同的曲线，分别都有两个高峰。原因同需探究。
+
+##bmi因素
+```{r, warning = FALSE}
+insu_df %>% 
+ggplot(aes(x = bmi, y = stat(density)))+
+    geom_histogram( aes(fill = "red"))+
+    scale_fill_manual(values = c("#d45087"))+
+    geom_density()
+
+insu_df %>% 
+ggplot(aes(x = bmi, charges, color = charges))+
+    geom_point()
+    
+    
+insu_df %>% 
+ggplot(aes(factor(age), bmi, color = "orange"))+
+    geom_point()+
+    geom_jitter()+
+    stat_summary(fun.y = mean, colour = "blue", geom = "point", size = 5)
+```
+
+   用户各个年龄段的平均bmi为30，bmi范围集中（25-35），在大致来说当bmi超过30，即身体明显处于肥胖状态时，保险支出费用有极大值，费用超过了30000美元。同时，各个年龄段肥胖人数的比例都接近50%，这是一个不好的现象。
+   
+##儿童个数因素
+```{r, warning = FALSE}
+insurance %>% 
+    count(children) %>% 
+    ggplot(aes(children, n))+
+    geom_col( aes(fill = "red", width = 0.5))+
+    scale_fill_manual(values = c("#d45087"))
+
+insurance %>% 
+    ggplot(aes(charges, children))+
+    ggridges::geom_density_ridges(aes(fill = factor(children)))
+
+insurance %>% 
+    ggplot(aes(factor(children), charges, fill = children))+
+    geom_boxplot()
+```
+
+   儿童医保支出费用平均1000美元，同男女性别上并无差异，集中在20000美元以下，对于小于等于3个的儿童用户，支出费用极大值广泛存在。孩子多了各项支出也相应多了。
+
+#smoker因素
+```{r}
+insurance %>% 
+    ggplot(aes(smoker,charges, fill = smoker))+
+    geom_boxplot()
+insurance %>% 
+    ggplot(aes(charges, smoker, fill = smoker, alpha = 0.5))+
+    ggridges::geom_density_ridges()
+
+```
+
+   在正常的波动范围内，吸烟用户的保险支出费用远高于非吸烟用户，吸烟用户在支出费用为30000美金左右呈现山谷状，是什么因素导致这一情况呢？需要对吸烟群体进行划分分析，也许和年龄、收入等有关。
+
+
+#地区因素
+```{r}
+insurance %>% 
+    count(region) %>% 
+    ggplot(aes(region, n, fill = "red"))+
+    geom_col()+
+    scale_fill_manual(values = c("#d45087"))
+
+insurance %>% 
+    ggplot(aes(charges, region, fill = region))+
+    ggridges::geom_density_ridges()
+insurance %>% 
+    ggplot(aes(region, charges, fill = region))+
+    geom_boxplot()
+```
+
+地区上，东南部医疗保险支出费用的极值要更高于其他地区，可能是因为地处美国的政治、经济、文化、中心--纽约及其周边。
+
+
+
+#相关系数矩阵
+```{r}
+insurance %>% 
+    select(-sex, -smoker, -region) %>%  
+    cor() %>% 
+    corrplot::corrplot(type = "lower")
+
+```
+charges同age、bmi、children都呈现正相关，同age的相关性要强一些。
+
+
+##model
+
+```{r}
+fit <- insu_df %>%
+  mutate_at(vars(age, bmi,children, charges), scale) %>%  
+  lm(charges ~ age+bmi+children, data = .) 
+summary(fit)
+broom::tidy(fit) 
+```
+在显著水平为0.1%的情况下，age和bmi相对更重要，children数量的重要性相对弱一些。
+
+```{r}
+mod2 <- lm(charges ~ age + smoker, data = insu_df)
+mod2
+broom::tidy(mod2)
+```
+
+
+#多重线性
+```{r}
+mod3 <- lmer(charges ~ age + (1 + age | smoker), data = insu_df)
+mod3
+broom.mixed::tidy(mod3, effects = "fixed")
+broom.mixed::tidy(mod3, effects = "ran_vals")
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+insu_df %>%
+  add_predictions(mod3) %>%
+  ggplot(aes( age, charges, color = smoker)) +
+  geom_point() +
+  geom_line(aes(x = age, y = pred)) 
+  
+```
+
+
+```{r}
+mod4 <- lmer(charges ~ age + (1 + age | sex), data = insu_df)
+mod4
+broom.mixed::tidy(mod4, effects = "fixed")
+broom.mixed::tidy(mod4, effects = "ran_vals")
+```
+
+
+
+```{r}
+insu_df %>%
+  add_predictions(mod4) %>%
+  ggplot(aes( age, charges, color = sex)) +
+  geom_point() +
+  geom_line(aes(x = age, y = pred)) 
+```
+这个模型的评价能力太不合适了。
+
+
+
+```{r}
+mod5 <- lmer(charges ~ bmi + (1 + bmi | smoker), data = insu_df)
+mod5
+broom.mixed::tidy(mod5, effects = "fixed")
+broom.mixed::tidy(mod5, effects = "ran_vals")
+```
+   该模型以不吸烟组作为参数对照，吸烟人群的bmi每增加一个单位，医疗费用支出增加982.6。
+
+
+```{r}
+insu_df %>%
+  add_predictions(mod5) %>%
+  ggplot(aes( bmi, charges, color = smoker)) +
+  geom_point() +
+  geom_line(aes(x = bmi, y = pred)) 
+```
+
+   这个模型的解释能力很好，从健康的角度考虑，吸烟与否和肥胖状况确实是健康的两大杀手，对于二者均沾的人来说，健康程度要差一些，在医疗费用的支出上高一些的可能性是合理的。
+   
+   
+   
+   
+   
+##结论
+从模型上看，医疗费用支出同bmi、smoker、age这三个变量表现出较高的相关性，但这种相关性不是固定的单独线性关系，而是多重线性关系，从图形拟合中能得到验证。   
+形象的说这三个因素相互作用影响到了医疗费用支出的金额，医疗费用的变化收到多重因素的影响。从常识来看，一个人随着年龄的增加+肥胖严重+吸烟，那么健康问题将会非常突出，高血压、心脏病、肺病等疾病患病的概率将会大大增加，医疗费用的支出也将会大大增加。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
