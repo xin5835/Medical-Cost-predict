@@ -39,7 +39,7 @@ insurance
  该数据集主要是针对医疗费用支出收集的相关数据，自变量包括用户的年龄、性别、身体质量指数、小孩数量、是否吸烟、地区。属于回归分析的范畴。  
  
 
-##检查缺失值
+## 检查缺失值
 ```{r}
 insurance %>%
     summarise_all(
@@ -47,12 +47,12 @@ insurance %>%
     )
 ```
 各个变量均没有缺失值。
-#数据概览
+# 数据概览
 ```{r}
 summary(insurance)
 ```
 
-##将sex 、smoker、region变量转换为因子，并保留在insu_df数据框
+## 将sex 、smoker、region变量转换为因子，并保留在insu_df数据框
 ```{r}
 insu_df <- insurance %>%
     mutate(sex = factor(sex),
@@ -62,8 +62,8 @@ insu_df <- insurance %>%
 insu_df
 ```
 
-#变量简单统计
-#insurance变量分布图
+# 变量简单统计
+## insurance变量分布图
 ```{r}
 insurance %>% 
 ggplot(aes(x = charges, y = stat(density)))+
@@ -73,7 +73,7 @@ ggplot(aes(x = charges, y = stat(density)))+
     
 ```
 
-##年龄因素
+## 年龄因素
 ```{r}
 insu_df %>% 
     ggplot(aes(age, fill = "red"))+
@@ -93,7 +93,7 @@ insu_df %>%
 *医疗支出费用随着年龄增加而增加，  
 *抽烟群体的保险支出费用比非抽烟人群的保险支出费用要高，都成线性增长趋势。
 
-##性别因素
+## 性别因素
 ```{r, warning = FALSE}
 insu_df %>% 
     count(sex) %>% 
@@ -113,7 +113,7 @@ ggplot(aes(sex, charges, fill = sex))+
 女性保险支出费用在（15000-30000美元）和男性支出费用在（20000-40000美元），为正常的波动范围，男性的波动幅度更大些。女性30000美元以上和男性40000以上为各自组内的异常值，表明这一部分用户群相对是少数。在异常值的部分，女性用户的波动范围很大（30000-65000美元），可能是什么原因呢？也许需要进行问卷调研。  
 共同点：医疗费用支出有着大致相同的曲线，分别都有两个高峰。原因同需探究。
 
-##bmi因素
+## bmi因素
 ```{r, warning = FALSE}
 insu_df %>% 
 ggplot(aes(x = bmi, y = stat(density)))+
@@ -135,7 +135,7 @@ ggplot(aes(factor(age), bmi, color = "orange"))+
 
    用户各个年龄段的平均bmi为30，bmi范围集中（25-35），在大致来说当bmi超过30，即身体明显处于肥胖状态时，保险支出费用有极大值，费用超过了30000美元。同时，各个年龄段肥胖人数的比例都接近50%，这是一个不好的现象。
    
-##儿童个数因素
+## 儿童个数因素
 ```{r, warning = FALSE}
 insurance %>% 
     count(children) %>% 
@@ -154,7 +154,7 @@ insurance %>%
 
    儿童医保支出费用平均1000美元，同男女性别上并无差异，集中在20000美元以下，对于小于等于3个的儿童用户，支出费用极大值广泛存在。孩子多了各项支出也相应多了。
 
-#smoker因素
+## smoker因素
 ```{r}
 insurance %>% 
     ggplot(aes(smoker,charges, fill = smoker))+
@@ -168,7 +168,7 @@ insurance %>%
    在正常的波动范围内，吸烟用户的保险支出费用远高于非吸烟用户，吸烟用户在支出费用为30000美金左右呈现山谷状，是什么因素导致这一情况呢？需要对吸烟群体进行划分分析，也许和年龄、收入等有关。
 
 
-#地区因素
+## 地区因素
 ```{r}
 insurance %>% 
     count(region) %>% 
@@ -188,7 +188,7 @@ insurance %>%
 
 
 
-#相关系数矩阵
+# 相关系数矩阵
 ```{r}
 insurance %>% 
     select(-sex, -smoker, -region) %>%  
@@ -199,7 +199,7 @@ insurance %>%
 charges同age、bmi、children都呈现正相关，同age的相关性要强一些。
 
 
-##model
+## model
 
 ```{r}
 fit <- insu_df %>%
@@ -217,7 +217,7 @@ broom::tidy(mod2)
 ```
 
 
-#多重线性
+# 混合线性模型
 ```{r}
 mod3 <- lmer(charges ~ age + (1 + age | smoker), data = insu_df)
 mod3
@@ -226,7 +226,7 @@ broom.mixed::tidy(mod3, effects = "ran_vals")
 ```
 
 
-#以somoker为分组对age变量做多重线性模型的可视化
+# 以somoker为分组对age变量做多重线性模型的可视化
 ```{r}
 insu_df %>%
   add_predictions(mod3) %>%
@@ -265,7 +265,7 @@ broom.mixed::tidy(mod5, effects = "ran_vals")
 ```
    该模型以不吸烟组作为参数对照，吸烟人群的bmi每增加一个单位，医疗费用支出增加982.6。
 
-#模型5可视化。
+## 模型5可视化。
 ```{r}
 insu_df %>%
   add_predictions(mod5) %>%
@@ -280,7 +280,7 @@ insu_df %>%
    
    
    
-##结论
+# 结论
 1.美国居民医疗费用支出集中分布在200-1500美元。
 2.20岁以下的儿童是医疗费用支出的人数是最多的，其他年龄段人数上差异不大，性别和地区上差异不大。不同的肥胖指数与是否吸烟人群在医疗费用上差异变化很大。
 3.从模型上看，医疗费用支出同bmi、smoker、age这三个变量表现出较高的相关性，但这种相关性不是固定的单独线性关系，而是多重线性关系，从图形拟合中能得到验证。   
