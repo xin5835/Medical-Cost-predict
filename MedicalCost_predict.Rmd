@@ -1,0 +1,381 @@
+---
+title: " medical_cost_predict"
+author: "Rngxin Feng"
+date: "12/11/2020"
+output: html_document
+---
+
+```{r, setup}
+knitr::opts_chunk$set(echo = FALSE)
+```
+## 背景
+
+    健康保险在医疗健康系统中发挥着重要的作用，研究健康保险费用支出的相关性及对影响因素间的模型预测，对于合理设置保险金额，调配保险资源的有效使用，具有重要的意义。
+
+    一、可以了解用户在医疗费用支出上的的最大、最小值和平均支出费用这些人群分别有什么特点。
+    
+    二、医疗费用支出与那些因素有关，那些是主要决定因素，如何才能精确的对待不同的人群设定保险额度，以达到资源的最优运用。
+
+    三、有没有模型可以反映出大部分用户在健康保险费用支出上的关系，模型的表现如何，是否有大量的异常数据和立群值。
+    
+    四、依据分析过程，提出相关建议。
+    
+    
+## 目录：
+
+    一、加载包并读取数据
+        1.1加载包
+        1.2读取数据
+        1.3变量注释
+    二、数据清洗
+        2.1检查缺失值
+        2.2数据概览
+        2.3将sex 、smoker、region变量转换为因子，并保留在insu_df数据框
+    三、变量统计以及可视化
+        3.1insurance分布图
+        3.2年龄分布图
+        3.3性别分布图
+        3.4bmi因素分布图
+        3.5儿童个数分布图
+        3.6smoker因素分布图
+        3.7地区因素分布图
+    四、相关性探索
+    五、建立模型
+        5.1多元线性模型
+        5.2多重线性
+        5.2.1以somoker为分组对age变量做多重线性模型的可视化
+        5.5.2.2以somoker为分组对bmi变量的多重线性模型可视化
+    六、结论
+
+## 一、加载包并读取数据
+
+### 1.1加载包
+
+```{r, message=FALSE}
+library(tidyverse)
+library(psych)
+library(ggridges)
+library(broom.mixed)
+library(viridis)#调色
+library(modelr)
+library(lme4)
+library(patchwork)
+```
+
+### 1.2读取数据
+
+```{r, message=FALSE}
+insurance <- read_csv("~/workspace/insurance.csv")
+insurance
+```
+
+### 1.3变量注释
+
+|序号|变量|注释|
+|:---|:---|:---|
+| 1|  age | 年龄|
+| 2|  sex | 性别|
+| 3|  bmi | 身体质量指数，成人标准值（18.5-23.9），算法：kg/(m^2)|
+| 4|  children| 小孩数量|
+| 5|  smoker | 是否吸烟|
+| 6|  region | 地区|
+| 7|  charges | 投保费用| 
+
+ 
+## 二、数据清洗
+
+### 2.1检查缺失值
+
+```{r}
+insurance %>%
+    summarise_all(
+        ~ sum(is.na(.))
+    )
+```
+
+    各个变量均没有缺失值。
+
+### 2.2数据概览
+
+```{r}
+summary(insurance)
+```
+
+    数据集有1338行（观测值），7个变量，3个字符型向量，4个数字型向量。
+
+    该数据集主要是健康保险费用用支出收集的相关数据，自变量包括用户的年龄、性别、身体质量指数、小孩数量、是否吸烟、地区。 
+    
+## 2.3将sex 、smoker、region变量转换为因子，并保留在insu_df数据框
+
+```{r}
+insu_df <- insurance %>%
+    mutate(sex = factor(sex),
+           smoker = factor(smoker),
+           region = factor(region),
+           children = factor(children)
+           ) 
+insu_df
+```
+
+# 三、变量统计以及可视化
+
+### 3.1insurance分布图
+
+```{r}
+insurance %>% 
+ggplot(aes(charges, ..density.., fill = I("#d45087"))) +
+   geom_histogram(bins = 50) +
+   geom_density()+
+   theme(legend.position = "none")
+
+tibble(low_charges = nrow(filter(insu_df,charges<15000 )),
+       middle_charges =  nrow(filter(insu_df,charges>=15000 & charges<50000)),
+       high_charges = nrow(filter(insu_df, charges>=50000)),
+         )
+```
+
+    健康保险支出费用集中在1.5万美元以下，占比73.3%。1.5万-5万之间占比26.2%，5万以上占比0.5%。这三个区间段的支出费用差距较大，应采取不同的运营策略。
+    
+### 3.2年龄分布图
+
+```{r}
+insu_df %>% 
+  ggplot(aes(age, fill = I("#d45087")))+
+    geom_bar()+ 
+    theme(legend.position = "none")
+
+p1 <- insu_df %>% 
+    ggplot(aes(age, charges))+
+      geom_point(color = I("#d45087"))
+ 
+p2 <- insu_df %>% 
+    ggplot(aes(age, charges, color = smoker))+
+      geom_point()
+
+p1+p2
+```
+
+    图形表明：
+
+    1.年龄条形图显示，投保费用中20岁以下的人数占比最高，20岁以上人数分布均匀。
+
+    2.抽烟群体的保险支出费用比非抽烟人群的保险支出费用要高，都成线性增长趋势。
+
+    3.年龄和保险支出费用呈线性关系，但是这种关系应该收到其他因素的影响，表现为多层线性关系。 
+
+    4.依照是否吸烟对数据进行分组，支出费用小于20000美金的用户中，线性关系非常明显，数据分布集中，离群值较少。
+
+    5.红色和绿色重叠部分，由于数据集中没有关于抽烟支数的记录，猜测可能是偶尔吸烟和不吸烟的人群。
+
+    6.医疗费用支出最高的用户可能是老烟民。
+ 
+
+### 3.3性别分布图  
+
+```{r}
+p1 <- insu_df %>% 
+   count(sex) %>% 
+ggplot(aes(sex, n, fill = I("#d45087")))+
+  geom_col()+
+  theme(legend.position = "none")
+
+p2 <- insu_df %>% 
+  ggplot(aes(charges, sex, fill = sex)) +
+     ggridges::geom_density_ridges()
+
+p3 <- insu_df %>% 
+   ggplot(aes(sex, charges, fill = sex))+
+     geom_boxplot()
+
+(p1+p2)/p3
+```
+
+    性别因素，样本中男女人数均衡，费用支出无大的差异。 
+
+
+### 3.4bmi分布图  
+
+```{r, warning = FALSE}
+p1 <- insu_df %>% 
+  ggplot(aes(x = bmi, y = stat(density)))+
+    geom_histogram( aes(fill = I("#d45087")), bins = 50)+
+    theme(legend.position = "none")+
+    geom_density()
+
+p2 <- insu_df %>% 
+  ggplot(aes(x = bmi, charges, color = charges))+
+    geom_point()+
+    scale_color_viridis(option = "E")
+    
+p3 <- insu_df %>% 
+  ggplot(aes(factor(age), bmi, color = I("#d45087")))+
+    geom_point()+
+    geom_jitter()+
+    stat_summary(fun.y = mean, colour = "blue", geom = "point", size = 5)
+(p1+p2)/p3
+```
+
+    bmi数据呈常态分布，用户各个年龄段的平均bmi为30，bmi范围集中（25-35），bmi与保险支出看不到明显的线性关系。不能单纯的把bmi的高低作为保险费用高低的评价标准。
+    关于令人惊奇的是，bmi因素，并不像主观认定的，越肥胖的人，健康程度越差，健康费用支出越多。
+   
+### 3.5儿童个数分布图 
+
+```{r, warning = FALSE}
+p1 <- insu_df %>% 
+    count(children) %>% 
+ ggplot(aes(children, n))+
+   geom_col( aes(fill = I("#d45087")))+
+   theme(legend.position = "none")
+
+p2 <- insu_df %>% 
+    ggplot(aes(children, charges, fill = children))+
+      geom_boxplot()
+
+p1+p2
+```
+
+    没有儿童的用户大约占比44%。儿童数量越多，保险费用出现大金额的概率越低。
+
+### 3.6吸烟因素分布图
+
+```{r}
+p1 <- insu_df %>% 
+    ggplot(aes(smoker,charges, fill = smoker))+
+      geom_boxplot()
+
+p2 <- insu_df %>% 
+    ggplot(aes(charges, fill = smoker, alpha = 0.5))+
+      geom_density()
+
+p1/p2
+```
+
+    费用支出在吸烟因素中的表现，区别非常大。非吸烟用户的支出费用在100-1600美元浮动；吸烟用户的波动范围为15000-55000。吸烟用户的保险支出费用最小值和非吸烟用户支出费用的最大值持平。
+    可以清晰的看到制约健康保险费用的关键因素中，是否吸烟是其中重要因素之一。
+    
+### 3.7地区因素分布图 
+
+```{r}
+p1 <- insu_df %>% 
+    count(region) %>% 
+  ggplot(aes(region, n, width = 0.7, fill = I("#d45087")))+
+    geom_col()+
+    coord_flip()+
+    theme(legend.position = "none")
+
+p2 <- insu_df %>% 
+    ggplot(aes(charges, region, fill = region))+
+      ggridges::geom_density_ridges()
+
+p3 <- insu_df %>% 
+    ggplot(aes(region, charges, fill = region))+
+      geom_boxplot()+
+      coord_flip()
+
+p1+(p2/p3)
+```
+
+    地区因素中，四个地区在费用支出上数据表现没有大的差异性。
+
+## 四、相关性探索
+
+
+```{r}
+insu_df <- within(insu_df,{
+                    smoke <- NA 
+                    smoke[smoker == "yes"] <- 1
+                    smoke[smoker == "no"]  <- 0})
+
+insu_df[c("age", "bmi", "children", "smoke", "charges")] %>% 
+  pairs.panels(stars = T, main="Insurance Scatterplot Matrix")
+```
+
+    可以看到charges同smoke、age、bmi都呈现正相关，charges同smoke的相关系数达到了0.79。是否吸烟已经成了影响健康费用的决定性因素。
+
+
+## 五、建立模型 
+
+### 5.1多元线性模型
+
+```{r}
+
+mod1 <- lm(charges ~ smoker+age+bmi+children+region, data = insu_df)
+summary(mod1)
+```
+
+    在p<0.001水平下，截距、吸烟人群、年龄、bmi和2个儿童的回归系数都非常显著。该模型可以解释75%的变异。
+    
+    
+```{r}
+mod2 <- lm(charges ~ smoker+age+bmi, data = insu_df)
+summary(mod2)
+```
+    
+    模型2的决定系数为74.8，各变量的回归系数都非常显著。
+
+## 5.2多重线性模型
+
+```{r}
+mod3 <- lmer(charges ~ age + (1 + age | smoker), data = insu_df)
+mod3
+```
+
+    以是否吸烟对把数据分为两组，可以看到是否吸烟对于年龄因素在保险费用支出上的变化效应。
+    
+### 5.2.1以somoker为分组对age变量的多重线性模型可视化
+
+```{r}
+insu_df %>%
+  add_predictions(mod3) %>%
+ggplot(aes( age, charges, color = smoker)) +
+  geom_point() +
+  geom_line(aes(x = age, y = pred)) 
+```
+   
+    该模型对不抽烟的用户拟合的还是比较好的，但是对于吸烟的用户拟合直线明显感觉有些粗旷。或许与吸烟的量以及其他因素有关，导致该模型拟合的绿色直线，不够好。  
+
+```{r}
+mod4 <- lmer(charges ~ bmi + (1 + bmi | smoker), data = insu_df)
+mod4
+```
+   
+    该模型以不吸烟组作为参数对照，可以看到是否吸烟对于bmi因素在保险费用支出上的变化效应。
+### 5.2.2以somoker为分组对bmi变量的多重线性模型可视化
+
+```{r}
+insu_df %>%
+  add_predictions(mod4) %>%
+ggplot(aes( bmi, charges, color = smoker)) +
+  geom_point() +
+  geom_line(aes(x = bmi, y = pred)) 
+```
+
+    这个模型的解释能力很好，吸烟人群的随着bmi的增加，支付费用高速增加；非吸烟人群随着bmi的增加，支出增加的相对要缓慢些。
+   
+   
+## 结论
+
+    1.美国居民医疗费用支出集中15000美元以下，占比73.3%。1.5万-5万之间占比26.2%。这两部分共占据了99.5%的医疗费用支出情况。
+
+    2.健康保险费用在性别和地区上没有明显的差异。
+    
+    3.从模型上看，医疗费用支出同bmi、smoker、age这三个变量表现出较高的相关性。其中，吸烟与否对与费用影响很大。具体来说吸烟人群中年龄大又肥胖的人群，费用支出非常高。对于非吸烟人群，哪怕胖一些，支出费用也不会非常之高。
+
+    4.在制定健康保险策略是，应从总体上把用户分为吸烟或者非吸烟用户，然后再去看用户的年龄和bmi情况，这样可以更优的使用保险资源。同时，应鼓励人们戒烟，并适当的进行减肥活动。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
